@@ -388,10 +388,140 @@ member.username.startsWith("member") //like ‘member%’ 검색
 
 <details>
 
-<summary> <h1>QueryDsl 설정방법 </h1> </summary>
+<summary> <h1>정렬, 페이징, 조인 </h1> </summary>
   
+### QueryDsl 정렬 예시
 
+```java
+/**
+* 회원 정렬
+* 1. 회원 나이 내림차순(desc)
+* 2. 회원 이름 올림차순(asc)
+* 단 2에서 회원 이름이 없으면 마지막에 출력(nulls last) 대박
+*/
+@Test
+public void sort() throws Exception {
+        List<Member> result = queryFactory.selectFrom(member)
+        .where(member.age.eq(100))
+        .orderBy(member.age.desc(), member.username.asc().nullsLast())
+        .fetch();
+        //나이가 100살의 멤버중, 나이로 내림차순, 이름으로 올림차순인데 null이 마지막으로 뽑기
+        //null을 먼저 뽑는 것도 있다. nullsFirst()
+        /*
+        select member1
+        from Member member1
+        where member1.age = 1001
+        order by member1.age desc, member1.username asc nulls last
+         */
+    }
+
+```
+
+
+
+### QueryDsl 페이징 예시
+
+```java
+ @Test
+    public void paging() throws Exception {
+        //방법 1 그냥 fetch()하여 결과 리스트만 가져오기
+        List<Member> fetch = queryFactory
+                .selectFrom(member)
+                .orderBy(member.username.desc())
+                .offset(1)//1개 넘겨서
+                .limit(2)//2개 들고오는데
+                .fetch();
+
+        //방법 2 count + 결과 조회해주는 fetchResult로 실행.
+        QueryResults<Member> fetchResults = queryFactory
+                .selectFrom(member)
+                .orderBy(member.username.desc())
+                .offset(1)//1개 넘겨서
+                .limit(2)//2개 들고오는데
+                .fetchResults();
+
+    }
+
+```
+
+> 💥 fetchResult는 counting 쿼리에도 fetch와 똑같은 조건을 가져오기 때문에
+> 실무에서는 count 따로, fetch 따로 해준다.
+
+
+
+### 특정 값으로 select 시
+
+> Dto를 사용하지 않으면 Tuple이라는 queryDsl이 제공해주는 객체로 담게 된다.
+
+```java
+
+    @Test
+    public void aggregation() throws Exception {
+        //원하는 정보를 꺼내고 싶을 때는 QueryDsl의 Tuple로 꺼낸다.
+        List<Tuple> result = queryFactory
+                .select(
+                        member.count(),
+                        member.age.sum(),
+                        member.age.avg(),
+                        member.age.max(),
+                        member.age.min()
+                )
+                .from(member)
+                .fetch();
+
+        Tuple tuple = result.get(0);
+
+        System.out.println(tuple.get(member.count()));
+        System.out.println(tuple.get(member.age.sum()));
+        System.out.println(tuple.get(member.age.avg()));
+        System.out.println(tuple.get(member.age.max()));
+        System.out.println(tuple.get(member.age.min()));
+
+        /* select count(member1)
+        , sum(member1.age)
+        , avg(member1.age)
+        , max(member1.age)
+        , min(member1.age)
+        from Member member1 */
+
+        //data 타입이 여러개로 들어올 때는 Tuple을 쓰면 된다. 실무에서 잘 쓰지는 않고 Dto를 사용하지만 참고
+    }
+```
+
+### 기본 join과 groupBy, Having 
   
+```java
+
+/**
+     * 팀의 이름과 각 팀의 평균 연령을 구해라.
+     */
+    @Test
+    public void groupBy() throws Exception {
+        List<Tuple> result = queryFactory
+                .select(team.name, member.age.avg())
+                .from(member)
+                .join(member.team, team)
+                .groupBy(team.name)
+                .having(team.name.ne("team3"))
+                .fetch();
+
+        Tuple teamA = result.get(0);
+        Tuple teamB = result.get(1);
+
+        System.out.println(teamA.get(team.name));
+        System.out.println(teamA.get(member.age.avg()));
+        System.out.println(teamB.get(team.name));
+        System.out.println(teamB.get(member.age.avg()));
+
+        /* select team.name, avg(member1.age)
+        from Member member1
+        inner join member1.team as team
+        group by team.name
+        having team.name <> 'team3'1 */
+
+    }
+```
+
 </details>
 
 <details>
