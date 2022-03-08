@@ -296,4 +296,177 @@ public class QuerydslBasicTest {
 
     }
 
+
+    /**
+     *
+     * Team A에 속한 모든 회원
+     */
+    @Test
+    public void join() throws Exception {
+        List<Member> result = queryFactory
+                .selectFrom(member)
+                .leftJoin(member.team, team)
+                .where(team.name.eq("teamA"))
+                .fetch();
+
+        assertThat(result)
+                .extracting("username")
+                .containsExactly("member1", "member2");
+
+          /* select
+            member1
+        from
+            Member member1
+        left join
+            member1.team as team
+        where
+            team.name = ?1 */
+    }
+
+    //연관관계가 없어도 join을 하는 경우
+    //thetajoin이라고 한다.
+
+    /**
+     * 회원의 이름이 팀 이름과 같은 회원 조회
+     */
+    @Test
+    public void theta_join() throws Exception {
+        em.persist(new Member("teamA"));
+        em.persist(new Member("teamB"));
+
+        List<Member> result = queryFactory
+                .select(member)
+                .from(member, team)
+                .where(member.username.eq(team.name))
+                .fetch();
+        //모든 회원을 가져오고 모든 팀을 가져와서 다 join, 이후 where 에서 필터링 한다.
+
+        assertThat(result)
+                .extracting("username")
+                .containsExactly("teamA", "teamB");
+        /*
+        select
+            member0_.user_id as user_id1_0_,
+            member0_.age as age2_0_,
+            member0_.team_id as team_id4_0_,
+            member0_.username as username3_0_
+        from
+            member member0_ cross
+        join
+            team team1_
+        where
+            member0_.username=team1_.name
+         */
+
+    }
+    //from절에 여러 entity를 선택해서 세타 조인가능하다.
+    //outer 조인이 불가능하다. -> on을 사용하여 외부 조인
+
+
+    /////////////On절
+    //1. 조인 대상 필터링
+    //2. 연관관계 없는 엔티티 외부 조인
+
+//2. 연관관계 없는 엔티티 외부 조인
+
+    /**
+     * 연관관계가 없는 Entity끼리 outer 조인을 할 떄 사용한다.
+     * 회원의 이름이 팀 이름과 같은 대상 찾기
+     */
+    @Test
+public void join_on_no_relation() throws Exception {
+    em.persist(new Member("teamA"));
+    em.persist(new Member("teamB"));
+
+        List<Tuple> result
+                = queryFactory
+                .select(member, team)
+                .from(member)
+                .join(team).on(member.username.eq(team.name))
+                .fetch();
+        // 흔히 말하는 막Join이다. 연관관계가 없는 두 Entity를 Join하는 방식이기 때문에,
+        //연관관계 객체를 넣어주지 않으면 ex).leftJoin(member.team)이 아닌, .leftJoin(team)
+        //id값으로 매칭을 해주는 기존 연관관계 join과 다르게, 순수 on절의 조건으로 매칭을 시킨다.
+
+        for (Tuple tuple : result) {
+            System.out.println(tuple);
+        }
+        /*
+       elect
+            member0_.user_id as user_id1_0_0_,
+            team1_.team_id as team_id1_1_1_,
+            member0_.age as age2_0_0_,
+            member0_.team_id as team_id4_0_0_,
+            member0_.username as username3_0_0_,
+            team1_.name as name2_1_1_
+        from
+            member member0_
+        inner join
+            team team1_
+                on (
+                    member0_.username=team1_.name
+                )
+         */
+
+        /*
+        결과
+
+        [Member(id=10, username=teamA, age=0), Team(id=1, name=teamA)]
+        [Member(id=11, username=teamB, age=0), Team(id=2, name=teamB)]
+         */
+
+}
+
+
+    //1. 조인 대상 필터링
+    /**
+     * ex ) 회원과 팀을 조인하면서, 팀 이름이 'teamA'인 팀만 조인, 회원은 모두 조회
+     * JPQL : select m, t from Member m left join m.team t on t.name = 'teamA'
+     */
+    @Test
+    public void joinOnFiltering() throws Exception {
+        List<Tuple> teamA = queryFactory
+                .select(member, team)
+                .from(member)
+                .leftJoin(member.team, team).on(team.name.eq("teamA"))
+                .fetch();
+
+        //innerJoin 할거면 그냥 where절을 쓰는게 낫다.
+
+        List<Tuple> result2 = queryFactory
+                .select(member, team)
+                .from(member)
+                .join(member.team, team)
+                .where(team.name.eq("teamA"))
+                .fetch();
+
+
+        /*
+        select
+            member0_.user_id as user_id1_0_0_,
+            team1_.team_id as team_id1_1_1_,
+            member0_.age as age2_0_0_,
+            member0_.team_id as team_id4_0_0_,
+            member0_.username as username3_0_0_,
+            team1_.name as name2_1_1_
+        from
+            member member0_
+        left outer join
+            team team1_
+               ************************
+                on member0_.team_id=team1_.team_id
+                and (
+                    team1_.name=?
+                )
+                **********************
+         */
+    }
+
+
+    //주의사항 상관관계 없는 on 조인은 leftJoin()에 entity 하나씩 들어간다.
+    //일반 조인 : `leftJoin(member.team, team)`
+    //on 조인 : `from(member).leftJoin(team).on(xxx)`
+
+
+
 }

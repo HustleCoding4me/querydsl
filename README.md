@@ -526,10 +526,240 @@ public void sort() throws Exception {
 
 <details>
 
-<summary> <h1>QueryDsl 설정방법 </h1> </summary>
-  
+<summary> <h1> join + on절 + fetch join </h1> </summary>
 
-  
+### 기본적인 상관관계 Entity Join
+
+> 기본적인 queryDsl 객체를 사용한 join 사용법<br>
+>> public <P> Q leftJoin(EntityPath<P> target, Path<P> alias)<br> 
+>> join을 걸고싶은 Entity의 연관관계 대상과 alias를 적어준다. (물론 QueryDsl의 Q객체들) 
+>> member.team처럼 내부 선언 연관관계 대상을 join에 적어주면 알아서 Team Table에서 outerJoin한다.
+
+
+```java
+/**
+     *
+     * Team A에 속한 모든 회원을 leftjoin하는 방법.
+     */
+    @Test
+    public void join() throws Exception {
+        List<Member> result = queryFactory
+                .selectFrom(member)
+                .leftJoin(member.team, team) 
+                .where(team.name.eq("teamA"))
+                .fetch();
+
+        assertThat(result)
+                .extracting("username")
+                .containsExactly("member1", "member2");
+
+          /* select
+            member1
+        from
+            Member member1
+        left join
+            member1.team as team
+        where
+            team.name = ?1 */
+        
+        /*
+          실 작동 쿼리
+          
+           select
+            member0_.user_id as user_id1_0_,
+            member0_.age as age2_0_,
+            member0_.team_id as team_id4_0_,
+            member0_.username as username3_0_ 
+        from
+            member member0_ 
+        left outer join
+            team team1_ 
+                on member0_.team_id=team1_.team_id 
+        where
+            team1_.name=?      
+                
+                
+         */
+        
+    }
+```
+
+### 상관관계 없는 Entity끼리 Join
+
+#### 방법 1. thetajoin
+#### 방법 2. on절 이용해 조건걸기
+
+1. thetajoin
+
+> 위의 예시처럼 Member - Team 의 N대1 , Member에 선언된 team처럼 연관관계가 없어도 join이 가능하다.<br>
+>> 연관관계가 없는 entity끼리 join을 하는 것을  `thetajoin`이라고 한다.
+>> 그냥 from절에 나열해주면 된다.
+
+```java
+/**
+ * 회원의 이름이 팀 이름과 같은 회원 조회
+ */
+@Test
+public void theta_join() throws Exception {
+        em.persist(new Member("teamA"));
+        em.persist(new Member("teamB"));
+
+        List<Member> result = queryFactory
+        .select(member)
+        .from(member, team)
+        .where(member.username.eq(team.name))
+        .fetch();
+
+        assertThat(result)
+        .extracting("username")
+        .containsExactly("teamA", "teamB");
+        
+        /*
+        select
+            member0_.user_id as user_id1_0_,
+            member0_.age as age2_0_,
+            member0_.team_id as team_id4_0_,
+            member0_.username as username3_0_ 
+        from
+            member member0_ cross 
+        join
+            team team1_ 
+        where
+            member0_.username=team1_.name
+         */
+}
+
+```
+### CrossJoin의 문제점과 해결
+> Cross Join이란
+>> 💥 모든 회원을 가져오고 모든 팀을 가져와서 다 join (`Cross Join : 집합에서 나올 수 있는 모든 경우`), 이후 where 에서 필터링 한다.<br>
+>> ` from member member0_ cross` 에서 알 수 있듯이 Cross join을 실시했다. 
+>> (db에서 자동으로 최적화를 진행하지만 당연히 일반 join보다 성능이 좋지 않다.)
+> 원인
+>> 별도의 join 없이 from에서 선언한 Table을 where에서 사용한 `암묵적 조인` 은 `Hibernate`가 `CrossJoin`을 하는 경향이 있다. 
+> 해결책
+>> 명시적 Join으로 수정하면 된다.
+
+> 💥 `thetaJoin`은 outer 조인이 불가능하다. -> 최근에는 on을 사용하여 outer Join도 가능하게 추가되었다.
+
+2.on절 이용해 조건 걸기
+
+> On절 사용법<br>
+1. 연관관계 없는 Entity 외부 조인 (일명 막조인)
+2. join 대상 필터링
+
+> 1. 연관관계 없는 Entity 외부 조인 (일명 막조인)
+>> 흔히 말하는 막Join이다. 연관관계가 없는 두 Entity를 Join하는 방식이기 때문에,<br>
+>> 연관관계 객체를 넣어주지 않으면 ex).leftJoin(member.team)이 아닌,<br>  
+>> leftJoin(team) id값으로 매칭을 해주는 기존 연관관계 join과 다르게, 순수 on절의 조건으로 매칭을 시킨다. <br>
+>> 해당 예시에서는 on(member.username.eq(team.name)) => MemberEntity, TeamEntity 조인하고 memberUsername으로 거른다.<br>
+> 
+>> 💥 주의, 막조인이기 때문에 join에 연관관계 Entity가 아니라 단독으로 들어간다.<br>
+>>  일반조인 : `leftJoin(member.team,team)`
+>>  on 조인 (막조인) : `.join(team).on(member.username.eq(team.name))`
+
+```java
+    /*
+     * 회원의 이름이 팀 이름과 같은 대상 찾기
+     */
+    @Test
+public void join_on_no_relation() throws Exception {
+    em.persist(new Member("teamA"));
+    em.persist(new Member("teamB"));
+
+        List<Tuple> result
+                = queryFactory
+                .select(member, team)
+                .from(member)
+                .join(team).on(member.username.eq(team.name))
+                .fetch();
+
+        for (Tuple tuple : result) {
+            System.out.println(tuple);
+        }
+        /*
+       select
+            member0_.user_id as user_id1_0_0_,
+            team1_.team_id as team_id1_1_1_,
+            member0_.age as age2_0_0_,
+            member0_.team_id as team_id4_0_0_,
+            member0_.username as username3_0_0_,
+            team1_.name as name2_1_1_
+        from
+            member member0_
+        inner join
+            team team1_
+                on (
+                    member0_.username=team1_.name
+                )
+         */
+
+        /*
+        결과
+
+        [Member(id=10, username=teamA, age=0), Team(id=1, name=teamA)]
+        [Member(id=11, username=teamB, age=0), Team(id=2, name=teamB)]
+         */
+
+}
+
+```
+
+> 2.join 대상 필터링
+
+```java
+/**
+     * ex ) 회원과 팀을 조인하면서, 팀 이름이 'teamA'인 팀만 조인, 회원은 모두 조회
+     * JPQL : select m, t from Member m left join m.team t on t.name = 'teamA'
+     */
+    @Test
+    public void joinOnFiltering() throws Exception {
+        List<Tuple> teamA = queryFactory
+                .select(member, team)
+                .from(member)
+                .leftJoin(member.team, team).on(team.name.eq("teamA"))
+                .fetch();
+
+        **innerJoin 할거면 그냥 where절을 쓰는게 낫다.**
+
+        List<Tuple> result2 = queryFactory
+                .select(member, team)
+                .from(member)
+                .join(member.team, team)
+                .where(team.name.eq("teamA"))
+                .fetch();
+
+
+        /*
+        select
+            member0_.user_id as user_id1_0_0_,
+            team1_.team_id as team_id1_1_1_,
+            member0_.age as age2_0_0_,
+            member0_.team_id as team_id4_0_0_,
+            member0_.username as username3_0_0_,
+            team1_.name as name2_1_1_
+        from
+            member member0_
+        left outer join
+            team team1_
+            
+               join 후 on절의 조건에 추가되는 모습. 걸러진다.
+               ************************
+                on member0_.team_id=team1_.team_id
+                and (
+                    team1_.name=?
+                )
+                **********************
+         */
+    }
+
+```
+
+
+
+
+
+
 </details>
 
 <details>
