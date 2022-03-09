@@ -756,7 +756,90 @@ public void join_on_no_relation() throws Exception {
 ```
 
 
+### Fetch Join
 
+> fetchJoin 미사용시
+
+>> @PersistenceUnit <br>
+>> EntityManagerFactory emf;
+>
+>> 이 어노테이션은 PersistenceUnitUtil을 가져와 Entity의 변수가 Loading이 되었는지 아닌지 check할 수 있다.
+>> boolean loaded = emf.getPersistenceUnitUtil().isLoaded(result.getTeam());
+
+
+
+```java
+
+    @PersistenceUnit
+    EntityManagerFactory emf;
+
+    @Test
+    public void fetchJoinNo() throws Exception {
+        em.flush();
+        em.clear();
+
+        Member result = queryFactory
+                .selectFrom(member)
+                .where(member.username.eq("member1"))
+                .fetchOne();
+        //LAZY LOADING이기 때문에, team은 조회가 안된다.
+        //PersistenceUnitUtil로 객체인지 Proxy인지 구별할 수 있다. 주로 테스트에서 많이 쓰임
+        boolean loaded = emf.getPersistenceUnitUtil().isLoaded(result.getTeam());
+        assertThat(loaded).as("페치조인 미적용으로 TEAM LAZYLOADING PROXY객체임").isFalse();
+    }
+```
+
+> fetchJoin 사용시
+>
+>> 기존 join처럼 쓰는데, 뒤에 .fetchJoin을 붙이면 한번에 가져오게 된다.
+>> .join(member.team, team).fetchJoin()
+
+```java
+    @Test
+    public void fetchJoinYes() throws Exception {
+        em.flush();
+        em.clear();
+
+        Member result = queryFactory
+                .selectFrom(member)
+                .join(member.team, team).fetchJoin()
+                .where(member.username.eq("member1"))
+                .fetchOne();
+        
+        boolean loaded = emf.getPersistenceUnitUtil().isLoaded(result.getTeam());
+        assertThat(loaded).as("페치조인 미적용으로 TEAM LAZYLOADING PROXY객체임").isTrue();
+        
+        /*
+            select
+        member1 
+    from
+        Member member1   
+    inner join
+        fetch member1.team as team 
+    where
+        member1.username = ?1  
+        */
+        /*
+        select
+        member0_.user_id as user_id1_0_0_,
+                team1_.team_id as team_id1_1_1_,
+        member0_.age as age2_0_0_,
+                member0_.team_id as team_id4_0_0_,
+        member0_.username as username3_0_0_,
+                team1_.name as name2_1_1_
+        from
+        member member0_
+        inner join
+        team team1_
+        on member0_.team_id=team1_.team_id
+        where
+        member0_.username=?
+        
+         */
+    }
+
+
+```
 
 
 

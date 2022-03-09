@@ -2,6 +2,9 @@ package study.querydsl;
 
 import com.querydsl.core.QueryResults;
 import com.querydsl.core.Tuple;
+import com.querydsl.core.types.dsl.CaseBuilder;
+import com.querydsl.core.types.dsl.Expressions;
+import com.querydsl.jpa.JPAExpressions;
 import com.querydsl.jpa.JPQLQueryFactory;
 import com.querydsl.jpa.impl.JPAQuery;
 import com.querydsl.jpa.impl.JPAQueryFactory;
@@ -18,6 +21,8 @@ import study.querydsl.entity.QTeam;
 import study.querydsl.entity.Team;
 
 import javax.persistence.EntityManager;
+import javax.persistence.EntityManagerFactory;
+import javax.persistence.PersistenceUnit;
 
 import java.util.List;
 
@@ -468,5 +473,337 @@ public void join_on_no_relation() throws Exception {
     //on 조인 : `from(member).leftJoin(team).on(xxx)`
 
 
+    //페치조인
 
+    
+    @PersistenceUnit
+    EntityManagerFactory emf;
+
+    @Test
+    public void fetchJoinNo() throws Exception {
+        em.flush();
+        em.clear();
+
+        Member result = queryFactory
+                .selectFrom(member)
+                .where(member.username.eq("member1"))
+                .fetchOne();
+        //LAZY LOADING이기 때문에, team은 조회가 안된다.
+        //PersistenceUnitUtil로 객체인지 Proxy인지 구별할 수 있다. 주로 테스트에서 많이 쓰임
+        boolean loaded = emf.getPersistenceUnitUtil().isLoaded(result.getTeam());
+        assertThat(loaded).as("페치조인 미적용으로 TEAM LAZYLOADING PROXY객체임").isFalse();
+    }
+
+    @Test
+    public void fetchJoinYes() throws Exception {
+        em.flush();
+        em.clear();
+
+        Member result = queryFactory
+                .selectFrom(member)
+                .join(member.team, team).fetchJoin()
+                .where(member.username.eq("member1"))
+                .fetchOne();
+        //LAZY LOADING이기 때문에, team은 조회가 안된다.
+        //PersistenceUnitUtil로 객체인지 Proxy인지 구별할 수 있다. 주로 테스트에서 많이 쓰임
+        boolean loaded = emf.getPersistenceUnitUtil().isLoaded(result.getTeam());
+        assertThat(loaded).as("페치조인 미적용으로 TEAM LAZYLOADING PROXY객체임").isTrue();
+
+        /*
+            select
+        member1
+    from
+        Member member1
+    inner join
+        fetch member1.team as team
+    where
+        member1.username = ?1
+        */
+        /*
+        select
+        member0_.user_id as user_id1_0_0_,
+                team1_.team_id as team_id1_1_1_,
+        member0_.age as age2_0_0_,
+                member0_.team_id as team_id4_0_0_,
+        member0_.username as username3_0_0_,
+                team1_.name as name2_1_1_
+        from
+        member member0_
+        inner join
+        team team1_
+        on member0_.team_id=team1_.team_id
+        where
+        member0_.username=?
+
+         */
+    }
+
+    //서브쿼리 com.querydsl.jpa.JPAExpressions 사용
+    /**
+     *
+     *  나이가 가장 많은 회원을 조회
+     */
+    @Test
+    public void subQuery() throws Exception {
+        //서브쿼리용 Entity는 alias가 달라야하기 때문에 따로 QMember 생성해준다.
+        QMember subMember = new QMember("subMember");
+        List<Member> result = queryFactory
+                .selectFrom(member)
+                .where(member.age.eq(
+                        JPAExpressions
+                                .select(subMember.age.max())
+                                .from(subMember)
+                )).fetch();
+
+        assertThat(result).extracting("age");
+    
+          /* select
+        member1 
+    from
+        Member member1 
+    where
+        member1.age = (
+            select
+                max(subMember.age) 
+            from
+                Member subMember
+        ) */ 
+        
+        /*select
+        member0_.user_id as user_id1_0_,
+                member0_.age as age2_0_,
+        member0_.team_id as team_id4_0_,
+                member0_.username as username3_0_
+        from
+        member member0_
+        where
+        member0_.age=(
+                select
+        max(member1_.age)
+        from
+        member member1_
+            )*/
+    }
+
+    /**
+     *
+     *  나이가 평균이상인 회원을 조회
+     */
+    @Test
+    public void subQuery_avg() throws Exception {
+        //서브쿼리용 Entity는 alias가 달라야하기 때문에 따로 QMember 생성해준다.
+        QMember subMember = new QMember("subMember");
+        List<Member> result = queryFactory
+                .selectFrom(member)
+                .where(member.age.goe(
+                        JPAExpressions
+                                .select(subMember.age.avg())
+                                .from(subMember)
+                )).fetch();
+
+        assertThat(result).extracting("age");
+    
+              /* select
+        member1
+    from
+        Member member1
+    where
+        member1.age >= (
+            select
+                avg(subMember.age)
+            from
+                Member subMember
+        ) */
+        /*select
+        member0_.user_id as user_id1_0_,
+                member0_.age as age2_0_,
+        member0_.team_id as team_id4_0_,
+                member0_.username as username3_0_
+        from
+        member member0_
+        where
+        member0_.age>=(
+                select
+        avg(cast(member1_.age as double))
+        from
+        member member1_
+            )*/
+    }
+
+
+    /**
+     *
+     *  나이가 10이상인 회원들을 in으로 조회
+     */
+    @Test
+    public void subQuery_in() throws Exception {
+        //서브쿼리용 Entity는 alias가 달라야하기 때문에 따로 QMember 생성해준다.
+        QMember subMember = new QMember("subMember");
+        List<Member> result = queryFactory
+                .selectFrom(member)
+                .where(member.age.in(
+                        JPAExpressions
+                                .select(subMember.age)
+                                .from(subMember)
+                                .where(subMember.age.gt(10))
+                )).fetch();
+
+        assertThat(result).extracting("age");
+ /* select
+        member1
+    from
+        Member member1
+    where
+        member1.age in (
+            select
+                subMember.age
+            from
+                Member subMember
+            where
+                subMember.age > ?1
+        ) */
+        /*select
+        member0_.user_id as user_id1_0_,
+                member0_.age as age2_0_,
+        member0_.team_id as team_id4_0_,
+                member0_.username as username3_0_
+        from
+        member member0_
+        where
+        member0_.age in (
+                select
+        member1_.age
+                from
+        member member1_
+        where
+        member1_.age>?
+            )*/
+    }
+
+    /**
+     *  select에 서브쿼리 만들기
+     *  나이가 10이상인 회원들을 in으로 조회
+     */
+    @Test
+    public void subQuery_select() throws Exception {
+        QMember subMember = new QMember("subMember");
+        List<Tuple> result = queryFactory
+                .select(member.username,
+                        JPAExpressions
+                                .select(subMember.age.avg())
+                                .from(subMember))
+                .from(member)
+                .fetch();
+
+        for (Tuple tuple : result) {
+            System.out.println(tuple);
+        }
+
+         /* select
+        member1.username,
+        (select
+            avg(subMember.age)
+        from
+            Member subMember)
+    from
+        Member member1 */
+        /*select
+        member0_.username as col_0_0_,
+                (select
+        avg(cast(member1_.age as double))
+        from
+        member member1_) as col_1_0_
+        from
+        member member0_*/
+    }
+
+    //from 절에서 서브쿼리가 불가능하다.
+    /*
+        JPA JPQL에서 from 절의 서브쿼리를 지원하지 않기 때문에, JPQL 기반의 QueryDsl도 지원되지 않는다.
+        하이버네이트 구현체를 사용하면 위와 같이 select절의 서비 쿼리는 지원한다.
+     */
+
+    /*
+       from 절의 서브쿼리 해결방안
+       1. 서브쿼리를 join으로 변경 시도
+       2. app에서 쿼리를 분리해서 2번 실행하여 거름
+       3. nativeSQL을 사용한다.
+     */
+    /*
+    from절에서 서브쿼리를 쓰는 많은 이유 중,
+    Bad Case  : DB가 너무 쿼리에서 기능을 많이 제공하여 화면과 관련된 로직, 여러 기능 넣어 쿼리를 짜는데
+    그럼 From SubFromQuery Sub의 Sub..등등 가져오게 하는데
+    query는 순수하게 DB를 가져오는 기능을 수행시키고 화면에 맞추는 작업은 logic에서 사용해야
+    쿼리의 재사용성이 좋아지고 분리도가 높아진다.
+     */
+    /*
+    실무에서는 사실상 query 한번 한번 단위로 성능을 고려하여 짜는 노력이 필요한 고성능 page의 경우
+    그냥 cache를 도입하는게 좋다. 화면에 완전히 fit하게 복잡한 쿼리를 짜서 한번에 날리느니,
+    그냥 두 세번 분리해서 날리는 것이 더 좋은 경우도 있다.
+     */
+
+
+
+
+    //case 문
+    //simplecase
+    @Test
+    public void basicCase() throws Exception {
+        List<String> result = queryFactory
+                .select(member.age
+                        .when(10).then("열살")
+                        .when(20).then("스무살")
+                        .otherwise("기타"))
+                .from(member)
+                .fetch();
+
+        for (String s : result) {
+            System.out.println(s);
+        }
+    }
+    //complexCase
+
+    @Test
+    public void complexCase() throws Exception {
+        List<String> result = queryFactory
+                .select(new CaseBuilder()
+                        .when(member.age.between(0, 20)).then("0~20살")
+                        .when(member.age.between(21, 30)).then("21~30살")
+                        .otherwise("기타")
+                ).from(member)
+                .fetch();
+        for (String s : result) {
+            System.out.println(s);
+        }
+    }
+
+
+    //상수
+
+    @Test
+    public void constant() throws Exception {
+        List<Tuple> result = queryFactory
+                .select(member.username, Expressions.constant("A"))
+                .from(member)
+                .fetch();
+
+        for (Tuple tuple : result) {
+            System.out.println(tuple);
+        }
+    }
+        @Test
+        public void concat() throws Exception {
+            //username_age로 붙여 쓰기
+            List<String> result = queryFactory
+                    .select(member.username.concat("_").concat(member.age.stringValue()))//stringValue() enum타입들도 변환시에 유용하다.
+                    .from(member)
+                    .where(member.username.eq("member1"))
+                    .fetch();
+
+            for (String s : result) {
+                System.out.println(s);
+            }
+        }
+
+    }
 }
