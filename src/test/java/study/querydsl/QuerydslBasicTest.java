@@ -2,6 +2,8 @@ package study.querydsl;
 
 import com.querydsl.core.QueryResults;
 import com.querydsl.core.Tuple;
+import com.querydsl.core.types.ExpressionUtils;
+import com.querydsl.core.types.Projections;
 import com.querydsl.core.types.dsl.CaseBuilder;
 import com.querydsl.core.types.dsl.Expressions;
 import com.querydsl.jpa.JPAExpressions;
@@ -15,6 +17,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.annotation.Commit;
 import org.springframework.transaction.annotation.Transactional;
+import study.querydsl.dto.MemberDto;
+import study.querydsl.dto.QMemberDto;
+import study.querydsl.dto.UserDto;
 import study.querydsl.entity.Member;
 import study.querydsl.entity.QMember;
 import study.querydsl.entity.QTeam;
@@ -805,5 +810,151 @@ public void join_on_no_relation() throws Exception {
             }
         }
 
+        //중급 문법
+
+        //프로젝션 하나
+        @Test
+        public void oneProjection() throws Exception {
+            List<String> result = queryFactory
+                    .select(member.username)
+                    .from(member)
+                    .fetch();
+
+            List<Member> result2 = queryFactory
+                    .select(member)
+                    .from(member)
+                    .fetch();
+        }
+
+    @Test
+    public void tupleProjection() throws Exception {
+        List<Tuple> result1 = queryFactory
+                .select(member.username, member.age)
+                .from(member)
+                .fetch();
+
+        //튜플 출력 방법
+        for (Tuple tuple : result1) {
+            String username = tuple.get(member.username);
+            Integer age = tuple.get(member.age);
+        }
     }
+
+    /***********
+     * DTO로 조회하기
+     */
+
+    @Test
+    public void findDtoByJPQL() throws Exception {
+        List<MemberDto> resultList = em.createQuery("select new study.querydsl.dto.MemberDto(m.username, m.age) from Member m", MemberDto.class)
+                .getResultList();
+
+        for (MemberDto memberDto : resultList) {
+            System.out.println(memberDto);
+        }
+    }
+
+
+    @Test
+    public void findDtoByQueryDsl_Setter() throws Exception {
+        List<MemberDto> result = queryFactory
+                .select(Projections.bean(MemberDto.class, member.username, member.age))
+                .from(member)
+                .fetch();
+        for (MemberDto memberDto : result) {
+            System.out.println(memberDto);
+        }
+    }
+
+    @Test
+    public void findDtoByQueryDsl_Field() throws Exception {
+        List<MemberDto> result = queryFactory
+                .select(Projections.fields(MemberDto.class, member.username, member.age))
+                .from(member)
+                .fetch();
+        for (MemberDto memberDto : result) {
+            System.out.println(memberDto);
+        }
+    }
+
+    @Test
+    public void findDtoByQueryDsl_Constructor() throws Exception {
+        List<MemberDto> result = queryFactory
+                .select(Projections.constructor(MemberDto.class, member.username, member.age))
+                .from(member)
+                .fetch();
+        for (MemberDto memberDto : result) {
+            System.out.println(memberDto);
+        }
+    }
+
+    @Test
+    public void findDtoByQueryDsl_Field2() throws Exception {
+        List<UserDto> result = queryFactory
+                .select(Projections.fields(UserDto.class, member.username, member.age))
+                .from(member)
+                .fetch();
+
+        for (UserDto userDto : result) {
+            System.out.println(userDto);
+        }
+        /*
+        UserDto에는 username이란 Field가 없어서 null로 들어간다 (인식 불가)
+        UserDto(name=null, age=10)
+        UserDto(name=null, age=20)
+        UserDto(name=null, age=30)
+        UserDto(name=null, age=40)
+         */
+
+        //따라서 as로 alias 설정을 해주어야 함. (member.username -> "name"으로 as로 설정)
+        List<UserDto> result2 = queryFactory
+                .select(Projections.fields(UserDto.class, member.username.as("name"), member.age))
+                .from(member)
+                .fetch();
+
+        for (UserDto userDto : result2) {
+            System.out.println(userDto);
+        }
+        /*
+        UserDto(name=member1, age=10)
+        UserDto(name=member2, age=20)
+        UserDto(name=member3, age=30)
+        UserDto(name=member4, age=40)
+        잘 들어온 모습
+         */
+
+        //그럼 이 alias를 이용하면, SubQuery도 삽입이 가능한거 아니야?
+        //맞다.
+        QMember subMember = new QMember("subMember");
+        queryFactory
+                .select(Projections.fields(UserDto.class, member.username.as("name")
+                                , ExpressionUtils.as(JPAExpressions
+                                        .select(subMember.age.max())
+                                        .from(subMember), "age")
+                        )
+                ).from(member)
+                .fetch();
+    }
+
+
+    @Test
+    public void findDtoByQueryDsl_Constructor2() throws Exception {
+        List<UserDto> result = queryFactory
+                .select(Projections.constructor(UserDto.class, member.username, member.age))
+                .from(member)
+                .fetch();
+    }
+
+    @Test
+    public void findDtoByQueryDsl_QueryProjection() throws Exception {
+        List<MemberDto> fetch = queryFactory
+                .select(new QMemberDto(member.username, member.age))
+                .from(member)
+                .fetch();
+
+        for (MemberDto memberDto : fetch) {
+            System.out.println(memberDto);
+        }
+    }
+
 }

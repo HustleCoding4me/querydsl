@@ -11,15 +11,6 @@
         <module name="querydsl.main" />
       </profile>
     </annotationProcessing>
-    <bytecodeTargetLevel target="11">
-      <module name="querydsl.querydsl.main" target="11" />
-      <module name="querydsl.querydsl.main~1" target="11" />
-      <module name="querydsl.querydsl.test" target="11" />
-      <module name="querydsl.querydsl.test~1" target="11" />
-      <module name="study .querydsl" target="11" />
-      <module name="study .querydsl.main" target="11" />
-      <module name="study .querydsl.querydsl" target="11" />
-      <module name="study .querydsl.test" target="11" />
-    </bytecodeTargetLevel>
+    <bytecodeTargetLevel target="11" />
   </component>
 </project>

@@ -1172,7 +1172,341 @@ public CaseWhen<T, Q> when(D when) {
 
 <details>
 
-<summary> <h1>QueryDsl 설정방법 </h1> </summary>
+<summary> <h1> 프로젝션과 결과 반환 </h1> </summary>
+
+### 프로젝션
+select 절에 뭘 가져올지 대상을 지정하는 것
+
+1. 대상이 1개일 때
+-> 명확하게 타입 지정하여 반환
+2. 대상이 둘 이상일 떄
+-> Dto나 튜플로 반환
+
+> 대상이 1개일 때
+
+```java
+ @Test
+        public void oneProjection() throws Exception {
+            //userName을 String으로 받는 모습
+            List<String> result = queryFactory
+                    .select(member.username)
+                    .from(member)
+                    .fetch();
+            
+        }
+        //member 객체 하나만 받는것도 원프로젝션이라 한다.
+        List<Member> result2 = queryFactory
+        .select(member)
+        .from(member)
+        .fetch();
+        
+```
+---
+
+> 대상이 2개 이상일 때
+>> 튜플인 경우
+>
+> > 💥Tuple의 경우 `package com.querydsl.core` 즉 QueryDsl에 종속되어 있어서<br>
+> > `Repository` 영역을 벗어나서 사용되는 것은 지양해야한다.<br>
+> > (business 영역에서 queryDsl을 쓰는지 아닌지 관심 없어야 한다)<br>
+> > Dto로 수정해서 보내는게 낫다.
+
+```java
+@Test
+    public void tupleProjection() throws Exception {
+        List<Tuple> result1 = queryFactory
+                .select(member.username, member.age)
+                .from(member)
+                .fetch();
+
+        //튜플 출력 방법
+        for (Tuple tuple : result1) {
+            String username = tuple.get(member.username);
+            Integer age = tuple.get(member.age);
+        }
+    }
+```
+
+### 💥핵심 ! DTO로 조회
+>> QueryDsl 사용시 실무에서 많이 쓰이는 방법이다.
+
+1.JPA로 JPQL로 짜기
+```java
+   @Test
+public void findDtoByJPQL() throws Exception {
+        List<MemberDto> resultList = em.createQuery("select new study.querydsl.dto.MemberDto(m.username, m.age) from Member m", MemberDto.class)
+        .getResultList();
+```
+
+>> 단점
+>>> new 명령어가 DTO 경로까지 적어줘야 해서 번잡스럽다. 이 생성자 방식만 지원된다.
+
+> QueryDsl로 Dto 받기
+1. Setter 접근법 `Projections.bean`
+2. 필드 직접 접근법 `Projections.fields`
+3. 생성자 사용법 `Projections.constructor`
+
+#### 앞서서
+`package com.querydsl.core.types의 Projections`을 사용하여 Dto 객체로 Mapping이 쉽게 가능하다.
+
+>> 1.Setter 접근법
+>>> 경이롭게 쉬워졌다. Setter가 있고, NoArgsConstructor가 있어야 가능하다.
+
+```java
+@Test
+    public void findDtoByQueryDsl_Setter() throws Exception {
+        List<MemberDto> result = queryFactory
+        *****************************************************************************
+        //Projections.bean 사용
+                .select(Projections.bean(MemberDto.class, member.username, member.age))
+        *****************************************************************************
+                .from(member)
+                .fetch();
+        for (MemberDto memberDto : result) {
+            System.out.println(memberDto);
+        }
+    }
+```
+
+>> 2.필드 직접 접근법
+>>> Setter 대신 Field에 직접 꽂아 넣어주는 방식으로, Setter가 없어도 동작한다.
+
+```java
+@Test
+    public void findDtoByQueryDsl_Field() throws Exception {
+        List<MemberDto> result = queryFactory
+        *****************************************************************************
+        //Projections.fields 사용
+                .select(Projections.fields(MemberDto.class, member.username, member.age))
+        *****************************************************************************
+                .from(member)
+                .fetch();
+        for (MemberDto memberDto : result) {
+            System.out.println(memberDto);
+        }
+    }
+```
+
+>> 3.생성자 사용법
+>>> 생성자를 통해서 만드는데, 인자 순서를 잘 지켜줘야 한다.
+> 
+>>> 생성자
+
+```java
+@Data
+@NoArgsConstructor
+public class MemberDto {
+
+    private String username;
+    private int age;
+
+    public MemberDto(String username, int age) {
+        this.username = username;
+        this.age = age;
+    }
+}
+```
+
+```java
+  @Test
+    public void findDtoByQueryDsl_Constructor() throws Exception {
+        List<MemberDto> result = queryFactory
+        *****************************************************************************
+        //Projections.constructor 사용
+                .select(Projections.constructor(MemberDto.class, member.username, member.age))
+        *****************************************************************************
+                .from(member)
+                .fetch();
+        for (MemberDto memberDto : result) {
+            System.out.println(memberDto);
+        }
+    }
+```
+---
+
+### 응용
+
+> 자유롭게 Dto를 만들어서 Field로 Dto에 Fit하게 맞추는 방법 (`as`,`ExpressionsUtils.as`와 서브쿼리를 사용해서)
+
+앞서서 Field를 이용해 Dto에 맞추는 방법을 알아봤다. 기본적으로 사용하게 되면 
+넣으려는 Entity의 멤버변수명과 Dto의 Field명이 동일하게 유지되어야 한다.
+
+> Member Entity의 username, age와 MemberDto의 username, age가 동일하여
+> 앞서 수행했던  .select(Projections.fields(MemberDto.class, member.username, member.age)) 매핑이 성공된 이유
+
+```java
+@Entity
+public class Member {
+
+    @GeneratedValue
+    @Id
+    @Column(name = "user_id")
+    private Long id;
+    private String username;
+
+    private int age;
+}
+
+@Data
+@NoArgsConstructor
+public class MemberDto {
+
+    private String username;
+    private int age;
+
+    public MemberDto(String username, int age) {
+        this.username = username;
+        this.age = age;
+    }
+}
+
+//Member.username == MemberDto.username, Member.age == MemberDto.age가 동일하다.
+```
+
+> Fit하고 싶은 Dto의 Field Name이 Entity의 것과 다르다면?
+
+Test를 위해 UserDto로 Field 이름을 바꿔서 진행해본다.
+
+```java
+@Data
+@NoArgsConstructor
+public class UserDto {
+    private String name; //Member.username != UserDto.name
+    private int age;
+}
+
+```
+> 그냥 Projectiosn.fields로 UserDto.class를 받아 member.username을 넣어주면,<br>
+> 
+> Compile 때 오류는 나지 않지만 결과값을 인식을 못해 null로 넣어준다.
+
+```java
+ @Test
+    public void findDtoByQueryDsl_Field2() throws Exception{
+        List<UserDto> result=queryFactory
+        .select(Projections.fields(UserDto.class,member.username,member.age))
+        .from(member)
+        .fetch();
+
+        for(UserDto userDto:result){
+        System.out.println(userDto);
+        }
+        /*
+        UserDto에는 username이란 Field가 없어서 null로 들어간다 (인식 불가)
+        UserDto(name=null, age=10)
+        UserDto(name=null, age=20)
+        UserDto(name=null, age=30)
+        UserDto(name=null, age=40)
+         */
+        }
+```
+
+> 따라서 as로 alias 설정을 해주어야 한다. (member.username -> "name" 으로 as 설정)
+
+```java
+ List<UserDto> result2 = queryFactory
+        *********************************************************************************
+                .select(Projections.fields(UserDto.class, **member.username.as("name")**, member.age))
+        **********************************************************************************
+                .from(member)
+                .fetch();
+
+        for (UserDto userDto : result2) {
+            System.out.println(userDto);
+        }
+        /*
+        UserDto(name=member1, age=10)
+        UserDto(name=member2, age=20)
+        UserDto(name=member3, age=30)
+        UserDto(name=member4, age=40)
+        잘 들어온 모습
+         */
+```
+
+> 그럼 이 alias를 이용하면, SubQuery의 결과값도 삽입이 가능한거 아니야? 그렇다.
+>
+> > ExpressionUtils.as(SubQuery문,alias)를 사용하여 1번째 인자로 SubQuery를, 2번째 인자로 그 alias를 넣어줘서 
+> > UserDto를 뽑아내는데 "age"로 alias와 UserDto의 field명을 맞춰주었다. 서브쿼리는 무조건 ExpressionUtils로 감싸야 한다.
+
+
+```java
+ QMember subMember = new QMember("subMember");
+        queryFactory
+                .select(Projections.fields(UserDto.class, member.username.as("name")
+        ********************************************************************************
+                                , **ExpressionUtils.as(JPAExpressions
+                                        .select(subMember.age.max())
+                                        .from(subMember), "age")**
+        *********************************************************************************
+                        )
+                ).from(member)
+                .fetch();
+```
+
+> 번외로 Constructor로 맞춰줄 때는, 인자 타입만 맞으면 잘 들어가게 된다.
+
+```java
+   @Test
+    public void findDtoByQueryDsl_Constructor2() throws Exception {
+        List<UserDto> result = queryFactory
+                .select(Projections.constructor(UserDto.class, member.username, member.age))
+                .from(member)
+                .fetch();
+    }
+ // UserDto의 Constructor의 인자 타입과 순서만 맞으면 테스트가 성공한다.
+```
+
+
+
+### `@QueryProjection` 으로 DtoMapping하기
+
+1. 원하는 Dto의 Constructor에 @QueryProjection을 붙인다.
+```java
+public class MemberDto {
+
+    private String username;
+    private int age;
+**********************************************************************
+    @QueryProjection
+**********************************************************************
+    public MemberDto(String username, int age) {
+        this.username = username;
+        this.age = age;
+    }
+}
+```
+
+2. compileQuerydsl 돌린다.
+![img.png](img.png)
+
+3. QMemberDto가 생성된 모습과 우리가 사용할 생성자가 생긴 모습.
+![img_1.png](img_1.png)
+
+4. 이후 냅다 그냥 3에서 생성된 생성자로 select 하면 된다.
+```java
+    @Test
+    public void findDtoByQueryDsl_QueryProjection() throws Exception {
+        List<MemberDto> fetch = queryFactory
+                .select(new QMemberDto(member.username, member.age))
+                .from(member)
+                .fetch();
+    }
+```
+💥장점은 당연히 complie 시점에 형식 오류를 잡아준다는 것
+
+`Projection.constructor vs @QueryProjection`
+* `Projection.constructor`는 Runtime에 오류가 잡힌다.
+* `@QueryProjection`는 Complie 시점에 오류가 잡힌다.
+
+**But,** 고민거리는?
+#### compile 시점에 Type 체크, 변수 체크 보장이 됨에도 고민되는점은....
+* **DTO까지 QFile을 생성해줘야 하는 점** 
+* 또한, 설계상 Dto는 Repository, Service 등 여러 구조에서 사용되게 될텐데, 
+@QueryProjection을 사용한 Dto가  QueryDsl에 의존적이게 되어서, QueryDsl이 없으면 안되게 되어버린다는 점.
+
+> Dto를 플레인하게 짜고 싶으면 Projection.constructor를 사용하는게 맞다.
+>
+> 이정도는 허용하고 쉽게 사용하려면 @QueryProjection을 사용하자.
 
 
 
