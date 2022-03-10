@@ -1477,10 +1477,10 @@ public class MemberDto {
 ```
 
 2. compileQuerydsl 돌린다.
-![img.png](img.png)
+![image](https://user-images.githubusercontent.com/37995817/157723558-2e541119-9b45-4469-ab76-6a860207c48a.png)
 
 3. QMemberDto가 생성된 모습과 우리가 사용할 생성자가 생긴 모습.
-![img_1.png](img_1.png)
+![image](https://user-images.githubusercontent.com/37995817/157723612-5b21dfe9-7b92-4e0a-8c59-54803c1fe9ea.png)
 
 4. 이후 냅다 그냥 3에서 생성된 생성자로 select 하면 된다.
 ```java
