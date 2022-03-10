@@ -845,10 +845,335 @@ public void join_on_no_relation() throws Exception {
 
 </details>
 
+
+
+
+
+<details>
+
+<summary> <h1>[QueryDsl] 서브쿼리 사용하기 </h1> </summary>
+
+### 앞서서, 서브쿼리 사용시 생각해야할 점
+
+> 현재 from절에서 서브쿼리가 불가능하다.
+>
+> `원인`
+>> JPA JPQL에서 from 절의 서브쿼리를 지원하지 않기 때문에, JPQL 기반의 QueryDsl도 지원되지 않는다.<br>
+>
+>> 하이버네이트 구현체를 사용하면(`JPAExpressions`) select절의 서비 쿼리는 지원한다.
+>
+> from절의 서브쿼리 해결 방안 3가지로는
+>> 1. 서브쿼리를 join으로 변경 시도
+>
+> > 2. app에서 쿼리를 분리해서 2번 실행하여 거름
+>
+> > 3. nativeSQL을 사용하기
+>
+> 💢그러나 from절에서 서브쿼리를 사용하는 많은 이유 두 가지는
+>> 1. 화면에 완전 Fit하게 가져오기 위해
+>
+>> 2. 성능상의 이유로 단 한번의 query만 날려 가져오게 하기 위해
+>
+> 정도로 구분할 수 있는데, 과연 `DB에서 순수하게 Data를 가져오는 역할을 시켜서 재사용성을 높히는 설계 `와, <br>
+> `걸러내는 로직을 Server에서 한다` 를 포기할 만한 가치가 있는가 생각해보자. <br>
+>
+> 또한, from 서브쿼리로 하나에 1000줄 짤거, sql을 두 세번 날리면 각각 100줄정도로 나눌 수 있는데<br>
+> 그렇게까지 쿼리 한두번이 아쉬울 정도의 고성능을 요구하려면 이미 cache나 다른 조치를 취해야 하는게 맞다.
+
+
+### JPAExpressions를 사용해 서브쿼리 제작하기
+
+1. where절에 서브쿼리
+> 예시 1. where 절 innerjoin으로 나이 가장 많은 회원 조회하기
+>> 💫주의사항 : 서브쿼리용 Entity는 alias가 달라야하기 때문에 따로 QMember 생성해준다.
+>> JPAExpressions를 static import로 빼면 코드가 더 간결해진다.
+
+```java
+ @Test
+    public void subQuery() throws Exception {
+        *****
+        //Member InnerJoin을 위해 alias를 새로 선언해서 QMember 생성해주는 모습
+        *****
+        QMember subMember = new QMember("subMember");
+        List<Member> result = queryFactory
+                .selectFrom(member)
+                .where(member.age.eq(
+                        JPAExpressions
+                                .select(subMember.age.max())
+                                .from(subMember)
+                )).fetch();
+
+        assertThat(result).extracting("age");
+    
+          /* select
+        member1 
+    from
+        Member member1 
+    where
+        member1.age = (
+            select
+                max(subMember.age) 
+            from
+                Member subMember
+        ) */ 
+        
+        /*select
+        member0_.user_id as user_id1_0_,
+                member0_.age as age2_0_,
+        member0_.team_id as team_id4_0_,
+                member0_.username as username3_0_
+        from
+        member member0_
+        where
+        member0_.age=(
+                select
+        max(member1_.age)
+        from
+        member member1_
+            )*/
+    }
+
+```
+
+> 예시 2. 나이 평균이상 멤버만 구하기
+
+```java
+ @Test
+    public void subQuery_avg() throws Exception{
+        //서브쿼리용 Entity는 alias가 달라야하기 때문에 따로 QMember 생성해준다.
+        QMember subMember=new QMember("subMember");
+        List<Member> result=queryFactory
+        .selectFrom(member)
+        .where(member.age.goe(
+        JPAExpressions
+        .select(subMember.age.avg())
+        .from(subMember)
+        )).fetch();
+        }
+```
+
+> 예시 3. 💫유용한 서브쿼리로 & in으로 조회
+
+```java
+@Test
+    public void subQuery_in() throws Exception {
+        //서브쿼리용 Entity는 alias가 달라야하기 때문에 따로 QMember 생성해준다.
+        QMember subMember = new QMember("subMember");
+        List<Member> result = queryFactory
+                .selectFrom(member)
+                .where(member.age.in(
+                        JPAExpressions
+                                .select(subMember.age)
+                                .from(subMember)
+                                .where(subMember.age.gt(10))
+                )).fetch();
+
+        assertThat(result).extracting("age");
+ /* select
+        member1
+    from
+        Member member1
+    where
+        member1.age in (
+            select
+                subMember.age
+            from
+                Member subMember
+            where
+                subMember.age > ?1
+        ) */
+        /*select
+        member0_.user_id as user_id1_0_,
+                member0_.age as age2_0_,
+        member0_.team_id as team_id4_0_,
+                member0_.username as username3_0_
+        from
+        member member0_
+        where
+        member0_.age in (
+                select
+        member1_.age
+                from
+        member member1_
+        where
+        member1_.age>?
+            )*/
+    }
+
+
+```
+
+2.select에 서브쿼리
+
+> 간단 예시 : 유저 이름과 평균 나이 함께 출력하기
+
+```java
+@Test
+    public void subQuery_select() throws Exception {
+        QMember subMember = new QMember("subMember");
+        List<Tuple> result = queryFactory
+                .select(member.username,
+                        JPAExpressions
+                                .select(subMember.age.avg())
+                                .from(subMember))
+                .from(member)
+                .fetch();
+
+        for (Tuple tuple : result) {
+            System.out.println(tuple);
+        }
+
+         /* select
+        member1.username,
+        (select
+            avg(subMember.age)
+        from
+            Member subMember)
+    from
+        Member member1 */
+        /*select
+        member0_.username as col_0_0_,
+                (select
+        avg(cast(member1_.age as double))
+        from
+        member member1_) as col_1_0_
+        from
+        member member0_*/
+    }
+```
+
+
+</details>
+
+
+
+
+
+
+
+
+
+
+<details>
+
+<summary> <h1> Case문, 상수 출력, 특정 문자값 붙여 출력하기 </h1> </summary>
+
+### QueryDsl Case문 예제
+
+쿼리를 사용할 때, 경우에 따라 다른 값으로 치환을 Data에서 바로 할 경우가 있다. <br> 
+주로 화면에 Fit하게 가져올 때 사용할 것 같은데 <br>
+DB는 그냥 퍼올려서 Stream으로 Dto생성해서 처리하는것보다 좋을지는 역시나 고민해봐야할 문제
+---
+### `기본 CASE문`, `caseBuilder CASE문`
+
+> 간단한 Case문
+> 
+> > 그냥 when(경우).then(치환글) 만 사용하면 된다.<br> 
+> > 말 그대로 간단한 경우
+
+```java
+ @Test
+    public void basicCase() throws Exception {
+        List<String> result = queryFactory
+                .select(member.age
+                        .when(10).then("열살")
+                        .when(20).then("스무살")
+                        .otherwise("기타"))
+                .from(member)
+                .fetch();
+
+        for (String s : result) {
+            System.out.println(s);
+        }
+    }
+```
+
+
+> 복잡한 Case문
+>> 복잡하다는 의미는 when(조건) 절에 조건들이 까다롭다는 의미이다.
+>
+> > 이럴땐 `package com.querydsl.core.types.dsl` queryDsl이 제공하는 `CaseBuilder` 객체를 사용한다.
+> >  참고로 caseBuilder의 when과 그냥 Simple when은 받는 인자가 다르다.
+> 
+> > `caseBuilder의 when` 
+```java
+public CaseWhen<A,Q> when(Predicate b) {
+            return new CaseWhen<A,Q>(this, b);
+        }
+```
+>> `일반 Simple when`
+```java
+public CaseWhen<T, Q> when(D when) {
+            return when(ConstantImpl.create(when));
+        }
+```
+
+```java
+ @Test
+    public void complexCase() throws Exception {
+        List<String> result = queryFactory
+                .select(new CaseBuilder()
+                        .when(member.age.between(0, 20)).then("0~20살")
+                        .when(member.age.between(21, 30)).then("21~30살")
+                        .otherwise("기타")
+                ).from(member)
+                .fetch();
+        for (String s : result) {
+            System.out.println(s);
+        }
+    }
+```
+
+
+### 특정 상수와 문자열 연결하여 출력하기
+
+> 그냥 끝에 특정 상수값 함께 출력하는 법
+> > QueryDsl의 Expressions.constant를 사용한다.
+
+```java
+ @Test
+    public void constant() throws Exception {
+        List<Tuple> result = queryFactory
+                .select(member.username, Expressions.constant("A"))
+                .from(member)
+                .fetch();
+
+        for (Tuple tuple : result) {
+            System.out.println(tuple);
+        }
+    }
+```
+> 문자열 연결하여 출력하는 법
+>> concat을 통해 문자열 연결하는데, 해당 변수가 String이 아닐 경우 `stringValue()`를 붙여준다.
+>
+> > 💥 `stringValue()`는 enum 타입들도 변환할 때 사용해준다.
+
+
+```java
+        @Test
+        public void concat() throws Exception {
+            //username_age로 붙여 쓰기
+            List<String> result = queryFactory
+                    .select(member.username.concat("_").concat(member.age.stringValue()))//stringValue() enum타입들도 변환시에 유용하다.
+                    .from(member)
+                    .where(member.username.eq("member1"))
+                    .fetch();
+
+            for (String s : result) {
+                System.out.println(s);
+            }
+        }
+```
+
+  
+</details>
+
+
+
 <details>
 
 <summary> <h1>QueryDsl 설정방법 </h1> </summary>
-  
 
-  
+
+
 </details>
