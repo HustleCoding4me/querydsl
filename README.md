@@ -1779,8 +1779,14 @@ bulk 연산 이후, select를 한다면 db가 아닌, `영속성 Context`에서 
 
 ### H2Dialect에 선언된 기본 기능들
 
+> rtrim, space 등등 다양한 기능들을 제공한다. 
+	
+![image](https://user-images.githubusercontent.com/37995817/158064880-81ec54ba-84eb-4dd7-ada2-1709cc5bd8aa.png)
+![image](https://user-images.githubusercontent.com/37995817/158064888-de9a7724-ce6e-4514-84be-ac5c134a1309.png)
 
 
+> 기본 사용 기능중 replace 예제
+	
 ```java
  @Test
     public void sqlFunction() throws Exception {
@@ -1802,6 +1808,9 @@ from Member member1 */
          */
     }
 ```
+
+> 기본적으로 Expressions를 사용하지만, 너무 내장 기본 기능은 이미 구현되어있으므로, 그냥 QObject의 lower()같이 사용할 수 있다.	
+	
 ```java
 
     @Test
