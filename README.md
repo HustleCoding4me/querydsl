@@ -1774,6 +1774,10 @@ bulk 연산 이후, select를 한다면 db가 아닌, `영속성 Context`에서 
 각 DB에 맞춘 Dialect에 선언된 Function들은 기본 제공되지만, 자기가 DB에 만든 Function은 
 기본 Dialect를 상속받아 만든 파일을 등록하고, yml같은 파일에 선언해줘야한다.
 
+### H2Dialect에 선언된 기본 기능들
+
+
+
 ```java
  @Test
     public void sqlFunction() throws Exception {
