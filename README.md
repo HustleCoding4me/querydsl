@@ -1837,3 +1837,7 @@ from Member member1 */
 ```
 
 </details>
+
+[응용] builder, where 다중 조건문으로 동적 쿼리 & API 개발
+내부 static class 선언해서 testcase 제작하기
+profile 분리하는 방법
