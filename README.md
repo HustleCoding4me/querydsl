@@ -1841,3 +1841,6 @@ from Member member1 */
 [응용] builder, where 다중 조건문으로 동적 쿼리 & API 개발
 내부 static class 선언해서 testcase 제작하기
 profile 분리하는 방법
+
+page를 사용해서 totalcount와 data를 같이 구하는 방법
+data 내용과 전체 count를 별도로 조회하는 방법
