@@ -1838,7 +1838,195 @@ from Member member1 */
 
 </details>
 
-[응용] builder, where 다중 조건문으로 동적 쿼리 & API 개발
+	
+	
+<details>
+
+<summary> <h1> JPA + QueryDsl로 동적 쿼리 & API 개발 구축 (Builder or 다중 Where 메서드)</h1> </summary>
+
+> 순수 JPA Repository를 구축하여 QueryDsl 을 추가해본다.
+---
+> > QueryDsl을 위한 JPAQueryFactory는 2가지 방법으로 주입 가능하다.
+> > 1. @Bean으로 등록 후 @Autowired
+> > 2. 생성자 주입
+
+```java
+
+@Bean
+	JPAQueryFactory jpaQueryFactory(EntityManager em) {
+            return new JPAQueryFactory(em);
+            }
+// 1. @Bean으로 등록 후 주입받기
+            
+//  @Autowired  
+//  JPAQueryFactory queryFactory;
+or
+
+// 2. 생성자 주입받기 ( new)
+//public MemberJpaRepository(EntityManager em) {
+//        this.em = em;
+//        this.queryFactory = new JPAQueryFactory(em);
+//}
+
+```
+
+---
+
+> JPA Repository 구축
+> > 일반 JPA이기 때문에 findAll, findById 등등 수동 생성<br>
+> > 예시로 findAll만 작성했다.
+
+>> *********************************
+>> Team과 Member를 함께 검색하여 받기 위한 검색 Dto 제작 (@Query) 
+
+```java
+@Data
+public class MemberTeamDto {
+ private Long memberId;
+ private String username;
+ private int age;
+ private Long teamId;
+ private String teamName;
+ *********************
+ @QueryProjection
+ *********************
+ public MemberTeamDto(Long memberId, String username, int age, Long teamId,
+String teamName) {
+ this.memberId = memberId;
+ this.username = username;
+ this.age = age;
+ this.teamId = teamId;
+ this.teamName = teamName;
+ }
+}
+
+```
+
+@QueryProjection을 선언하면 추후 compile시에 지정된 경로에 QMemberTeamDto 생성자가 생긴다.
+
+다만 class 자체가 QueryDsl에 너무도 종속적이라 추후 QueryDsl을 제거하거나 여러 변수가 있을 때, 문제가 생길 수 있다.
+
+그럼 다른 방법으로 `Projection.bean(), fields(), constructor()` 중 골라서 쓰면 된다.
+
+
+
+>> *********************************
+
+
+---
+
+```java
+@Repository
+public class MemberJpaRepository {
+
+    private final EntityManager em;
+    private final JPAQueryFactory queryFactory;
+    public MemberJpaRepository(EntityManager em) {
+        this.em = em;
+        this.queryFactory = new JPAQueryFactory(em);
+    }
+    
+    //순수 JPA
+    public List<Member> findAll() {
+        return em.createQuery("select m from Member m", Member.class)
+                .getResultList();
+    }
+
+    public List<Member> findByUsername(String username) {
+        return em.createQuery("select m from Member m where m.username
+                = :username", Member.class)
+                .setParameter("username", username)
+                .getResultList();
+    }
+}
+
+```
+
+> QueryDsl로 검색 기능하는 동적 코드 작성
+> > 1. builder 사용
+
+```java
+
+public List<MemberTeamDto> searchByBuilder(MemberSearchCondition condition) {
+
+        BooleanBuilder builder = new BooleanBuilder();
+        if (hasText(condition.getUsername())) {
+        builder.and(member.username.eq(condition.getUsername()));
+        }
+        if (hasText(condition.getTeamName())) {
+        builder.and(team.name.eq(condition.getTeamName()));
+        }
+        if (condition.getAgeGoe() != null) {
+        builder.and(member.age.goe(condition.getAgeGoe()));
+        }
+        if (condition.getAgeLoe() != null) {
+        builder.and(member.age.loe(condition.getAgeLoe()));
+        }
+
+        return queryFactory
+        .select(new QMemberTeamDto(
+        member.id.as("memberId"),
+        member.username,
+        member.age,
+        team.id.as("teamId"),
+        team.name.as("teamName")))
+        .from(member)
+        .leftJoin(member.team, team)
+        .where(builder)
+        .fetch();
+        }
+
+```
+
+> > 다중 where 메서드를 사용해서 만들기
+
+
+```java
+public List<MemberTeamDto> search(MemberSearchCondition condition) {
+        return queryFactory
+                .select(new QMemberTeamDto(
+                        member.id.as("memberId"),
+                        member.username,
+                        member.age,
+                        team.id.as("teamId"),
+                        team.name.as("teamName")))
+                .from(member)
+                .leftJoin(member.team, team)
+                .where(
+                        usernameEq(condition.getUsername()),
+                        teamNameEq(condition.getTeamName()),
+                        ageGoe(condition.getAgeGoe()),
+                        ageLoe(condition.getAgeLoe())
+        //null이면 자동으로 where 조건에서 빠진다.
+                ).fetch();
+    }
+
+
+
+    private BooleanExpression usernameEq(String username) {
+        return hasText(username) ? member.username.eq(username) : null;
+    }
+
+    private BooleanExpression teamNameEq(String teamName) {
+        return hasText(teamName) ? team.name.eq(teamName) : null;
+    }
+    private BooleanExpression ageGoe(Integer ageGoe) {
+        return ageGoe != null ? member.age.goe(ageGoe) : null;
+    }
+    private BooleanExpression ageLoe(Integer ageLoe) {
+        return ageLoe != null ? member.age.loe(ageLoe) : null;
+    }
+
+    private BooleanExpression ageBetween(int ageLoe, int ageGoe) {
+        return ageGoe(ageGoe).and(ageGoe(ageGoe));
+    }
+
+
+```
+
+</details>
+	
+
 내부 static class 선언해서 testcase 제작하기
 profile 분리하는 방법
 
