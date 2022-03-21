@@ -2027,8 +2027,79 @@ public List<MemberTeamDto> search(MemberSearchCondition condition) {
 </details>
 	
 
-내부 static class 선언해서 testcase 제작하기
-profile 분리하는 방법
+<details>
+
+<summary> @Profile로 분리, 내부 static Class 로 TestCase 만들기 (@PostConstruct 사용) </summary>
+
+1. 구분 하고 싶은 file에 @Profile 선언 
+
+```java
+
+//local - dev - server 로 보통 분리를 하여서 Profile을 관리한다.
+@Profile("local")
+
+
+@Profile("test")
+
+```
+
+2. yml에 별개로 선언 (test는 따로 같은 resource 경로 만들어줘서 test로 수정)
+
+
+> local Profile로 실행
+
+```yml
+spring:
+  profiles:
+    active: local
+  datasource:
+    url: jdbc:h2:tcp://localhost/~/querydsl
+    username: sa
+    password: 1234
+    driver-class-name: org.h2.Driver
+
+```
+
+> src\test\resources\properties.yml test Profile로 실행
+
+```yml
+
+spring:
+  profiles:
+    active: test
+  datasource:
+    url: jdbc:h2:tcp://localhost/~/querydsl
+    username: sa
+    password: 1234
+    driver-class-name: org.h2.Driver
+
+
+```
+
+> yml 두개인 모습 (test, local)
+![image](https://user-images.githubusercontent.com/37995817/159232282-e7a15dbd-60e8-4f33-a40e-8ded9c1602c2.png)
+
+
+	
+---
+
+	
+```java
+	
+	
+```
+	
+	
+	
+	
+	
+	</details>
+	
+
+	
+	
+	
+	
 
 page를 사용해서 totalcount와 data를 같이 구하는 방법
 data 내용과 전체 count를 별도로 조회하는 방법
