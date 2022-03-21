@@ -2,14 +2,17 @@ package study.querydsl.repository;
 
 import com.querydsl.core.QueryResults;
 import com.querydsl.core.types.dsl.BooleanExpression;
+import com.querydsl.jpa.impl.JPAQuery;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.support.PageableExecutionUtils;
 import study.querydsl.dto.MemberSearchCondition;
 import study.querydsl.dto.MemberTeamDto;
 import study.querydsl.dto.QMemberTeamDto;
+import study.querydsl.entity.Member;
 
 import java.util.List;
 
@@ -88,8 +91,9 @@ public class MemberRepositoryImpl implements MemberRepositoryCustom{
                 .limit(pageable.getPageSize())
                 .fetch(); //fetch를 해서 content만 가져온다.
 
-        long count = queryFactory
-                .select(member)
+       /* long count = queryFactory
+                //.select(Wildcard.count) //select count(*)
+                .select(member.count())
                 .from(member)
                 .leftJoin(member.team, team)
                 .where(
@@ -97,13 +101,25 @@ public class MemberRepositoryImpl implements MemberRepositoryCustom{
                         teamNameEq(condition.getTeamName()),
                         ageGoe(condition.getAgeGoe()),
                         ageLoe(condition.getAgeLoe())
-                ).fetchCount();
+                ).fetchOne();*/
         //분리의 장점
         //CONTENT는 복잡한데, COUNT는 간단할 수 있다. (JOIN을 줄이거나, WHERE절이 적어도 상관 없거나
         //QeuryDsl에서 제공하는 fetchResult를 쓰면
         //같은 query로 count를 구해오기 때문에, 위와 같은 경우에는
         //따로 pageCount를 count 하는게 좋다.
-        return new PageImpl<>(content, pageable, count);
+
+        JPAQuery<Long> countQuery = queryFactory
+                .select(member.count())
+                .from(member)
+                .where(
+                        usernameEq(condition.getUsername()),
+                        teamNameEq(condition.getTeamName()),
+                        ageGoe(condition.getAgeGoe()),
+                        ageLoe(condition.getAgeLoe())
+
+                );
+
+        return PageableExecutionUtils.getPage(content, pageable, countQuery::fetchOne);
 
     }
 

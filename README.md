@@ -2103,3 +2103,49 @@ spring:
 
 page를 사용해서 totalcount와 data를 같이 구하는 방법
 data 내용과 전체 count를 별도로 조회하는 방법
+
+
+
+<details>
+
+<summary> SpringDataJPA가 제공하는 QuerydslPredicateExecutor 인터페이스 사용해보기</summary>
+
+
+1.기존 SpringDataJpa Repository에 새로 QuerydslPredicateExecutor를 상속받는다. (인터페이스)
+
+```java
+public interface MemberRepository extends JpaRepository<Member, Long> , MemberRepositoryCustom , QuerydslPredicateExecutor<Member> {
+    //select m from Member m where m.username = ?
+    List<Member> findByUsername(String username);
+
+}
+
+```
+
+> 기본적인 사용법
+
+```java
+
+   @Test
+    public void querydslPredicateExecutorTest() throws Exception {
+        QMember member = QMember.member;
+        Iterable<Member> result = memberRepository.findAll(member.age.between(10, 40).and(member.username.eq("member1")));
+        for (Member findMember : result) {
+            System.out.println(findMember);
+        }
+    }
+
+```
+
+
+* left join이 불가능 하기 때문에 실용적이지 않다.
+* service, controller의 기술들이 repository의 queryDsl 기술에 의존관계가 함께 생긴다. 
+(순수한 dto 객체만 만들어서 넘기는게 아니라, QueryDsl의 Predicate를 조합해서 보내야하기 때문)
+* 결과적으로 실무 비추
+
+</details>
+
+
+
+
+
