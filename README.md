@@ -2149,3 +2149,541 @@ public interface MemberRepository extends JpaRepository<Member, Long> , MemberRe
 
 
 
+
+<details>
+
+<summary> SpringDataJPA (Interface)에 원하는 QueryDsl method 추가하기    </summary>
+
+SpringDataJPA는 interface로 상속받아 구현하는데, QueryDsl 메서드를 추가하려면 구현체가 필요하다.
+
+> 기본적인 SpringDataJPA를 상속받은 interface Repository
+
+```java
+
+public interface MemberRepository extends JpaRepository<Member, Long>  {
+    //select m from Member m where m.username = ?
+    List<Member> findByUsername(String username);//naming 규칙으로 추가한 method
+}
+
+```
+
+> 그렇다면, 이 SpringDataJPA interface에 queryDsl 메서드를 추가하려면 어떻게?
+>> 🎁interface는 상속이 무한이라는 점을 이용한다.
+---
+### 방법 1. SpringDataJPA interface에 사용자 정의 Repository Interface를 만들고, 그 구현체에서 구현
+
+
+* SpringDataJPA Repository(Interface) -> 내가 만든 Custom interface + JpaRepository 상속
+* SpringDataJPA RepositoryImpl(Class) <- Custom interface에 선언된 메서드도 구현한다. (이때 구현을 querydsl로)
+
+> CustomInterface를 만든다. (SpringDataJpa Interface에 상속시켜 구현할 선언 메서드 집합)
+
+
+```java
+public interface MemberRepositoryCustom {
+    List<MemberTeamDto> search(MemberSearchCondition condition);
+
+    Page<MemberTeamDto> searchPageSimple(MemberSearchCondition condition, Pageable pageable);
+
+    Page<MemberTeamDto> searchPageComplex(MemberSearchCondition condition, Pageable pageable);
+}
+
+```
+
+> SpringDataJpa가 custom interface를 상속한다.
+
+
+```java
+
+public interface MemberRepository extends JpaRepository<Member, Long> , ****MemberRepositoryCustom**** {
+    //select m from Member m where m.username = ?
+    List<Member> findByUsername(String username);
+
+}
+
+```
+
+
+> SpringDataJPA를 구현하여 구현체를 생성 (implements)
+> > MemberRepositoryCustom에 있는 search, searchPageSimple, searchPageComplex를 구현한 모습
+
+* 🎁 구현체는 naming을 지켜줘야한다. (SpringDataJpa interface 네임 + Impl)
+* ex ) `MemberRepository` + `Impl` = `MemberRepositoryImpl`
+* custom과는 구현체 네이밍과 상관 없으니 주의🥊
+
+```java
+public class MemberRepositoryImpl implements MemberRepositoryCustom{
+
+    @Autowired
+    private JPAQueryFactory queryFactory;
+
+
+    @Override
+    public List<MemberTeamDto> search(MemberSearchCondition condition) {
+        return queryFactory
+                .select(new QMemberTeamDto(
+                        member.id.as("memberId"),
+                        member.username,
+                        member.age,
+                        team.id.as("teamId"),
+                        team.name.as("teamName")))
+                .from(member)
+                .leftJoin(member.team, team)
+                .where(
+                        usernameEq(condition.getUsername()),
+                        teamNameEq(condition.getTeamName()),
+                        ageGoe(condition.getAgeGoe()),
+                        ageLoe(condition.getAgeLoe())
+                ).fetch();
+    }
+
+    @Override
+    public Page<MemberTeamDto> searchPageSimple(MemberSearchCondition condition, Pageable pageable) {
+        QueryResults<MemberTeamDto> result = queryFactory
+                .select(new QMemberTeamDto(
+                        member.id.as("memberId"),
+                        member.username,
+                        member.age,
+                        team.id.as("teamId"),
+                        team.name.as("teamName")))
+                .from(member)
+                .leftJoin(member.team, team)
+                .where(
+                        usernameEq(condition.getUsername()),
+                        teamNameEq(condition.getTeamName()),
+                        ageGoe(condition.getAgeGoe()),
+                        ageLoe(condition.getAgeLoe())
+                ).offset(pageable.getOffset())
+                .limit(pageable.getPageSize())
+                .fetchResults();//fetch가 아닌 fetchResult를 써야 count, page 쿼리 두개를 날린다.
+
+        List<MemberTeamDto> content = result.getResults();
+        long total = result.getTotal();
+
+        return new PageImpl<>(content, pageable, total);
+    }
+
+    @Override
+    public Page<MemberTeamDto> searchPageComplex(MemberSearchCondition condition, Pageable pageable) {
+        List<MemberTeamDto> content = queryFactory
+                .select(new QMemberTeamDto(
+                        member.id.as("memberId"),
+                        member.username,
+                        member.age,
+                        team.id.as("teamId"),
+                        team.name.as("teamName")))
+                .from(member)
+                .leftJoin(member.team, team)
+                .where(
+                        usernameEq(condition.getUsername()),
+                        teamNameEq(condition.getTeamName()),
+                        ageGoe(condition.getAgeGoe()),
+                        ageLoe(condition.getAgeLoe())
+                ).offset(pageable.getOffset())
+                .limit(pageable.getPageSize())
+                .fetch(); //fetch를 해서 content만 가져온다.
+
+       /* long count = queryFactory
+                //.select(Wildcard.count) //select count(*)
+                .select(member.count())
+                .from(member)
+                .leftJoin(member.team, team)
+                .where(
+                        usernameEq(condition.getUsername()),
+                        teamNameEq(condition.getTeamName()),
+                        ageGoe(condition.getAgeGoe()),
+                        ageLoe(condition.getAgeLoe())
+                ).fetchOne();*/
+        //분리의 장점
+        //CONTENT는 복잡한데, COUNT는 간단할 수 있다. (JOIN을 줄이거나, WHERE절이 적어도 상관 없거나
+        //QeuryDsl에서 제공하는 fetchResult를 쓰면
+        //같은 query로 count를 구해오기 때문에, 위와 같은 경우에는
+        //따로 pageCount를 count 하는게 좋다.
+
+        JPAQuery<Long> countQuery = queryFactory
+                .select(member.count())
+                .from(member)
+                .where(
+                        usernameEq(condition.getUsername()),
+                        teamNameEq(condition.getTeamName()),
+                        ageGoe(condition.getAgeGoe()),
+                        ageLoe(condition.getAgeLoe())
+
+                );
+
+        return PageableExecutionUtils.getPage(content, pageable, countQuery::fetchOne);
+
+    }
+
+
+    private BooleanExpression usernameEq(String username) {
+        return hasText(username) ? member.username.eq(username) : null;
+    }
+
+    private BooleanExpression teamNameEq(String teamName) {
+        return hasText(teamName) ? team.name.eq(teamName) : null;
+    }
+    private BooleanExpression ageGoe(Integer ageGoe) {
+        return ageGoe != null ? member.age.goe(ageGoe) : null;
+    }
+    private BooleanExpression ageLoe(Integer ageLoe) {
+        return ageLoe != null ? member.age.loe(ageLoe) : null;
+    }
+
+    private BooleanExpression ageBetween(int ageLoe, int ageGoe) {
+        return ageGoe(ageGoe).and(ageGoe(ageGoe));
+    }
+}
+
+```
+
+### 방법 2. dto등 화면과 fit하다면 그냥 상속시키지말고 따로 Repository 하나 만드는 것도?
+
+> 너무 SpringDataJpa에 상속시켜야 한다는 강박은 있을 필요 없다.
+
+```java
+@Repository
+public class MemberQueryReposiroty {
+
+    @Autowired
+    private JPAQueryFactory queryFactory;
+
+    public List<MemberTeamDto> search(MemberSearchCondition condition) {
+        //어쩌구 저쩌구 비즈니스 로직
+    }
+```
+
+</details>
+
+
+
+
+
+<details>
+
+<summary> [QueryDsl] QueryDsl + Paging & CountQuery 최적화 </summary>
+
+> SpringData의 Page 인터페이스와 Pageable 인터페이스, 
+> 그리고 Page 구현체 public `PageImpl(List<T> content, Pageable pageable, long total)`
+> `PageableExecutionUtils.getPage(content, pageable, countQuery::fetchOne)` 로 경우에 따라 Count쿼리 최적화
+> 를 사용한다.
+
+
+
+### count 분리 안하고 한번에 조회
+
+> Pageable interface로 page,size,sort를 자동 매핑하여 사용하게 하고, 
+> getOffset(), getPageSize() 등으로 꺼내 `queryDsl`의 offset,limit 메서드등에 인자로 넣어준다.
+> Page 객체로 return해주기 위해 PageImpl<>(실 return된 내용(Member), 인자로 받은 pageable, 전체 카운트)를 new해서 반환
+
+>> ✨주의사항 , QueryDsl의 fetchResults()가 곧 사라진다. <group By 등 복잡한 쿼리에서 count 쿼리를 자동 생성하는데 오류나는듯>
+>> -> 그냥 fetch()를 쓰고 자바에서 결과 counting을 하여 사용하란 대안이다.
+>> -> 근데 size()는 단순히 자바에서 List의 크기만 가져와서 총 total count는 안되니, 그냥 count query 따로 사용하자. 
+
+* fetchResult() 예시 (사장된다 곧 deprecated)
+```java
+
+    @Override
+public Page<MemberTeamDto> searchPageSimple(MemberSearchCondition condition, Pageable pageable) {
+        QueryResults<MemberTeamDto> result = 
+            queryFactory
+                .select(new QMemberTeamDto(
+                member.id.as("memberId"),
+                member.username,
+                member.age,
+                team.id.as("teamId"),
+                team.name.as("teamName")))
+                .from(member)
+                .leftJoin(member.team, team)
+                .where(
+                        usernameEq(condition.getUsername()),
+                        teamNameEq(condition.getTeamName()),
+                        ageGoe(condition.getAgeGoe()),
+                        ageLoe(condition.getAgeLoe())
+                ).offset(pageable.getOffset())
+                .limit(pageable.getPageSize())
+                .fetchResults();//fetch가 아닌 fetchResult를 써야 count, page 쿼리 두개를 날린다.
+
+        List<MemberTeamDto> content = result.getResults();
+        long total = result.getTotal();
+
+        return new PageImpl<>(content, pageable, total);
+        }
+
+```
+
+* fetchCount() -> fetch()로 변경, java에서 counting 
+```java
+
+    @Override
+public Page<MemberTeamDto> searchPageSimple(MemberSearchCondition condition, Pageable pageable) {
+        List<MemberTeamDto> content = 
+            queryFactory
+                .select(new QMemberTeamDto(
+                member.id.as("memberId"),
+                member.username,
+                member.age,
+                team.id.as("teamId"),
+                team.name.as("teamName")))
+                .from(member)
+                .leftJoin(member.team, team)
+                .where(
+                        usernameEq(condition.getUsername()),
+                        teamNameEq(condition.getTeamName()),
+                        ageGoe(condition.getAgeGoe()),
+                        ageLoe(condition.getAgeLoe())
+                ).offset(pageable.getOffset())
+                .limit(pageable.getPageSize())
+                .fetch()
+
+       
+
+        return new PageImpl<>(content, pageable, content.size());
+        }
+
+```
+
+### count 쿼리 분리하여 따로 사용하는 법 (이제 이방법을 주력으로 사용해야 한다.)
+
+> Page<>에 Dto 담아 return하는 것은 동일,
+> Pageable 사용하는 것도 동일이다. 다만 queryDsl로 countQuery 한번 더 호출,
+> `PageableExecutionUtils.getPage`로 맨 첫 페이지 content 개수가 size 미달이거나, 마지막 page인 경우 count query 실행 X하여 최적화
+
+
+> 1.Page<>에 Dto 담아 return하는 것은 동일,
+> fetch() 쿼리로 content만 우선 실행,
+```java
+
+    @Override
+    public Page<MemberTeamDto> searchPageComplex(MemberSearchCondition condition, Pageable pageable) {
+        List<MemberTeamDto> content = queryFactory
+                .select(new QMemberTeamDto(
+                        member.id.as("memberId"),
+                        member.username,
+                        member.age,
+                        team.id.as("teamId"),
+                        team.name.as("teamName")))
+                .from(member)
+                .leftJoin(member.team, team)
+                .where(
+                        usernameEq(condition.getUsername()),
+                        teamNameEq(condition.getTeamName()),
+                        ageGoe(condition.getAgeGoe()),
+                        ageLoe(condition.getAgeLoe())
+                ).offset(pageable.getOffset())
+                .limit(pageable.getPageSize())
+                .fetch(); //fetch를 해서 content만 가져온다.
+
+    }
+
+```
+
+
+> 2-1. count 쿼리 fetchOne()으로 직접 호출
+```java
+long count = queryFactory
+                //.select(Wildcard.count) //select count(*)
+                .select(member.count())
+                .from(member)
+                .leftJoin(member.team, team)
+                .where(
+                        usernameEq(condition.getUsername()),
+                        teamNameEq(condition.getTeamName()),
+                        ageGoe(condition.getAgeGoe()),
+                        ageLoe(condition.getAgeLoe())
+                ).fetchOne();
+
+```
+
+> 2-2. fetch 안하고 JPAQuery count query만 뽑아서 `PageableExecutionUtils.getPage()` 호출
+>> 이 방법이 count를 경우에 따라 호출하기 때문에 최적화라 생각한다.
+```java
+        JPAQuery<Long> countQuery = queryFactory
+                .select(member.count())
+                .from(member)
+                .where(
+                        usernameEq(condition.getUsername()),
+                        teamNameEq(condition.getTeamName()),
+                        ageGoe(condition.getAgeGoe()),
+                        ageLoe(condition.getAgeLoe())
+
+                );
+
+        return PageableExecutionUtils.getPage(content, pageable, countQuery::fetchOne);
+```
+
+
+
+</details>
+
+
+
+<details>
+
+<summary> [QueryDsl] QuerydslRepositorySupport abstract 받아서 구현체 도움 받기 </summary>
+
+> `@Repository public abstract class QuerydslRepositorySupport`
+> Impl 객체들에 QueryDsl 사용을 서포팅 해주는 `추상클래스`이다.
+
+```java
+public class MemberRepositoryImpl extends ***QuerydslRepositorySupport*** implements MemberRepositoryCustom{
+//구현체에 extends ***QuerydslRepositorySupport*** 추가
+```
+
+
+- 기존 QuerydslRepositorySupport -> custom한 abstract class 개선점 
+  - Paging을 편리하게 변환 (offset,limit 체인을 제거)
+  - Paging, count 쿼리 분리 (람다로 그냥 연속적으로 chain으로 받게 함)
+  - 스프링 데이터 Sort 사용가능 (기존에 안되는거)
+  - from() 시작문을 -> select(), selectFrom() 시작문으로 변경
+  - QueryFactory는 빠져서 추가로 넣어주던거 기본 지원으로 수정
+
+
+
+> 1.기본 queryFactory , EntityManager 주입받아줌
+> > 적용 모습
+
+```java
+
+public class MemberTestRepository extends Querydsl4RepositorySupport {
+    public MemberTestRepository() {
+        super(Member.class);
+    }
+}
+```
+
+>> 코드 분석
+
+```java
+@Repository
+public abstract class Querydsl4RepositorySupport {
+    private final Class domainClass;
+    private Querydsl querydsl;
+    private EntityManager entityManager;
+    private JPAQueryFactory queryFactory;
+//1. 도메인 class 받기 (ex)Member.class)
+    public Querydsl4RepositorySupport(Class<?> domainClass) {
+        Assert.notNull(domainClass, "Domain class must not be null!");
+        this.domainClass = domainClass;
+    }
+//2. EntityManager 주입받기
+    @Autowired
+    public void setEntityManager(EntityManager entityManager) {
+        Assert.notNull(entityManager, "EntityManager must not be null!");
+        //2-1. Path를 잡아야 Sort 명령시에 오류가 안난다.
+        JpaEntityInformation entityInformation =
+                JpaEntityInformationSupport.getEntityInformation(domainClass, entityManager);
+        SimpleEntityPathResolver resolver = SimpleEntityPathResolver.INSTANCE;
+        EntityPath path = resolver.createPath(entityInformation.getJavaType());
+        //2-2. entityManager 주입 받은 것으로 querydsl, queryFactory 생성
+        this.entityManager = entityManager;
+        this.querydsl = new Querydsl(entityManager, new
+                PathBuilder<>(path.getType(), path.getMetadata()));
+        this.queryFactory = new JPAQueryFactory(entityManager);
+    }
+    
+    @PostConstruct
+    public void validate() {
+        Assert.notNull(entityManager, "EntityManager must not be null!");
+        Assert.notNull(querydsl, "Querydsl must not be null!");
+        Assert.notNull(queryFactory, "QueryFactory must not be null!");
+    }
+//3. getter로 가져다 쓸 순 있지만, 이후에 그냥 queryFactory를 호출된 형태의 method를 가져다 쓸 수 있게 해준다.    
+    protected JPAQueryFactory getQueryFactory() {
+        return queryFactory;
+    }
+    protected Querydsl getQuerydsl() {
+        return querydsl;
+    }
+    protected EntityManager getEntityManager() {
+        return entityManager;
+    }
+```
+
+
+> 기존 from() -> select(),selectFrom() 변경, + queryFactory 생략
+>> queryFactory.select() -> select()로 간소화 적용 모습
+
+```java
+public List<Member> basicSelect() {
+        return select(member)
+                .from(member)
+                .fetch();
+    }
+```
+
+>> 코드 분석
+>>> 이미 내부에서 queryFactory를 불러서 select(표현식) 받아 처리하는 모습
+```java
+protected <T> JPAQuery<T> select(Expression<T> expr) {
+        return getQueryFactory().select(expr);
+    }
+    protected <T> JPAQuery<T> selectFrom(EntityPath<T> from) {
+        return getQueryFactory().selectFrom(from);
+    }
+```
+
+> Paging을 편리하게 변환 (offset,limit 체인을 제거)
+> Paging, count 쿼리 분리 (람다로 그냥 연속적으로 chain으로 받게 함)
+> > 적용 모습
+
+```java
+     // count, content 분리
+public Page<Member> applyPagination2(MemberSearchCondition condition, Pageable pageable) {
+        return applyPagination(pageable, countQuery ->countQuery
+            .selectFrom(member)
+            .leftJoin(member.team,team)
+            .where(
+                usernameEq(condition.getUsername()),
+                teamNameEq(condition.getTeamName()),
+                ageGoe(condition.getAgeGoe()),
+                ageLoe(condition.getAgeLoe())
+            )//content 쿼리
+                ,countQuery -> countQuery
+                .select(member.count())
+                .from(member)
+                .leftJoin(member.team,team)
+                .where(
+                    usernameEq(condition.getUsername()),
+                    teamNameEq(condition.getTeamName()),
+                    ageGoe(condition.getAgeGoe()),
+                    ageLoe(condition.getAgeLoe())
+                )//count 쿼리
+                );
+        }
+
+```
+
+> > 코드 분석
+> > fetchResult, fetchCount 등이 사장되어서 그냥 fetchOne 버전으로<br>
+> > countquery까지 chain으로 받는식으로 수정했다.
+
+```java
+    protected <T> Page<T> applyPagination(Pageable pageable,
+                                          Function<JPAQueryFactory, JPAQuery> contentQuery, Function<JPAQueryFactory,
+            JPAQuery> countQuery) {
+        JPAQuery jpaContentQuery = contentQuery.apply(getQueryFactory());
+        List<T> content = getQuerydsl().applyPagination(pageable,
+                jpaContentQuery).fetch();
+        JPAQuery<Long> countResult = countQuery.apply(getQueryFactory());
+
+        return org.springframework.data.support.PageableExecutionUtils.getPage(content, pageable,
+                countResult::fetchOne);
+    }
+
+```
+
+    
+
+
+
+
+
+</details>
+
+
+
+
+<details>
+
+<summary> [QueryDsl] QuerydslRepositorySupport abstract 받아서 구현체 도움 받기 </summary>

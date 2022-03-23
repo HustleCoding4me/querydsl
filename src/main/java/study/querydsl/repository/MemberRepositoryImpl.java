@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.support.QuerydslRepositorySupport;
 import org.springframework.data.support.PageableExecutionUtils;
 import study.querydsl.dto.MemberSearchCondition;
 import study.querydsl.dto.MemberTeamDto;
@@ -20,10 +21,14 @@ import static org.springframework.util.StringUtils.hasText;
 import static study.querydsl.entity.QMember.member;
 import static study.querydsl.entity.QTeam.team;
 
-public class MemberRepositoryImpl implements MemberRepositoryCustom{
+public class MemberRepositoryImpl extends QuerydslRepositorySupport implements MemberRepositoryCustom{
 
     @Autowired
     private JPAQueryFactory queryFactory;
+
+    public MemberRepositoryImpl() {
+        super(Member.class);
+    }
 
 
     @Override
@@ -47,7 +52,7 @@ public class MemberRepositoryImpl implements MemberRepositoryCustom{
 
     @Override
     public Page<MemberTeamDto> searchPageSimple(MemberSearchCondition condition, Pageable pageable) {
-        QueryResults<MemberTeamDto> result = queryFactory
+        List<MemberTeamDto> content = queryFactory
                 .select(new QMemberTeamDto(
                         member.id.as("memberId"),
                         member.username,
@@ -63,12 +68,9 @@ public class MemberRepositoryImpl implements MemberRepositoryCustom{
                         ageLoe(condition.getAgeLoe())
                 ).offset(pageable.getOffset())
                 .limit(pageable.getPageSize())
-                .fetchResults();//fetch가 아닌 fetchResult를 써야 count, page 쿼리 두개를 날린다.
+                .fetch();//fetch가 아닌 fetchResult를 써야 count, page 쿼리 두개를 날린다.
 
-        List<MemberTeamDto> content = result.getResults();
-        long total = result.getTotal();
-
-        return new PageImpl<>(content, pageable, total);
+        return new PageImpl<>(content, pageable, content.size());
     }
 
     @Override
@@ -141,4 +143,7 @@ public class MemberRepositoryImpl implements MemberRepositoryCustom{
     private BooleanExpression ageBetween(int ageLoe, int ageGoe) {
         return ageGoe(ageGoe).and(ageGoe(ageGoe));
     }
+
+
+
 }
