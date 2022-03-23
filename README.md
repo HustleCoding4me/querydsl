@@ -2083,17 +2083,12 @@ spring:
 	
 ---
 
-	
-```java
-	
-	
-```
+
 	
 	
 	
 	
-	
-	</details>
+</details>
 	
 
 	
